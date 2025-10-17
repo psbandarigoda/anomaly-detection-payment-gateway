@@ -34,7 +34,7 @@ jobs:
           if [ -f ml/requirements.txt ]; then pip install -r ml/requirements.txt; fi
 
       - name: Prepare dirs
-        run: mkdir -p datasets trivy_out artifacts
+        run: mkdir -p datasets trivy_out artifacts ml/data
 
       # ------------------- DATA GENERATION (trivy/ is canonical) -------------------
       - name: Generate payment set
@@ -42,8 +42,14 @@ jobs:
           python trivy/make_payment_set_trivy.py --id 0001 --template trivy/payment_set_template
           echo "Generated -> datasets/payment_set_0001"
 
-      - name: Show generated tree (debug)
-        run: ls -R datasets/payment_set_0001
+      # SHOW WHICH TEST SCENARIO IS BEING USED
+      - name: Show applied test scenario files (env + eval.csv)
+        run: |
+          echo "===== CURRENT .env (used by Trivy scan) ====="
+          cat datasets/payment_set_0001/.env || echo "No .env found"
+          echo ""
+          echo "===== First 5 lines of eval.csv (used by ML) ====="
+          head -n 5 ml/data/eval.csv || echo "No eval.csv found"
 
       # ------------------- TRIVY (install via official script) -------------------
       - name: Install Trivy (official script)
@@ -86,7 +92,7 @@ jobs:
         run: |
           python ml/src/decision_gate.py
 
-      # ------------------- ARTIFACTS + SUMMARY -------------------
+      # ------------------- ARTIFACTS + SCENARIO FILES -------------------
       - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -96,6 +102,16 @@ jobs:
             artifacts/**
             trivy_out/**
             ml_out/**
+
+      # Upload the applied test scenario input for traceability
+      - name: Upload applied scenario input files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: applied-test-scenario-inputs
+          path: |
+            datasets/payment_set_0001/.env
+            ml/data/eval.csv
 
       - name: Post Job Summary
         if: always()
