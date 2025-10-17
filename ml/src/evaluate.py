@@ -10,7 +10,7 @@ from sklearn.metrics import precision_score, recall_score, f1_score
 from features import load_csv
 from utils import ensure_dir, write_json, log
 
-MODEL_PATH = Path("ml/models/isolation_forest_v1.pkl")
+MODEL_PATH = Path("ml/models/isolation_forest_model_v1.pkl")
 EVAL_PATH  = Path("ml/data/eval.csv")
 OUT_DIR    = ensure_dir("ml_out")
 OUT_METRICS = OUT_DIR / "ml_metrics.json"

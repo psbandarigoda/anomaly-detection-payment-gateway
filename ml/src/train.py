@@ -1,6 +1,6 @@
 """
 Offline training script (run locally or in a scheduled workflow).
-Reads ml/data/train.csv, trains IsolationForest, writes ml/models/isolation_forest_v1.pkl
+Reads ml/data/train.csv, trains IsolationForest, writes ml/models/isolation_forest_model_v1.pkl
 """
 from pathlib import Path
 import joblib
@@ -11,7 +11,7 @@ from features import load_csv
 from utils import ensure_dir, log
 
 TRAIN_CSV = Path("ml/data/train.csv")
-MODEL_PATH = Path("ml/models/isolation_forest_v1.pkl")
+MODEL_PATH = Path("ml/models/isolation_forest_model_v1.pkl")
 
 def main():
     log("Loading training data")

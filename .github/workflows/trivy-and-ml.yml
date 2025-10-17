@@ -73,7 +73,7 @@ jobs:
       # ------------------- ML -------------------
       - name: Verify Isolation Forest model exists
         run: |
-          test -f ml/models/isolation_forest_v1.pkl || (echo "Model not found: ml/models/isolation_forest_v1.pkl. Run ml/src/train.py and commit the .pkl."; exit 1)
+          test -f ml/models/isolation_forest_model_v1.pkl || (echo "Model not found: ml/models/isolation_forest_model_v1.pkl. Run ml/src/train.py and commit the .pkl."; exit 1)
 
       - name: ML Evaluate (Isolation Forest on eval.csv)
         run: |
