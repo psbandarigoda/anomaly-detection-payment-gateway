@@ -1,11 +1,4 @@
-# Trivy + IsolationForest Decision Gate
-
-## Workflow
-1. Train offline:
-   ```bash
-   python ml/src/train.py
-
-## Test Scenarios
+# Test Scenarios
 Four controlled inputs to trigger each Decision Gate branch.
 
 ## How to use
@@ -23,4 +16,3 @@ Four controlled inputs to trigger each Decision Gate branch.
 - `02_reject_ml_high_anomaly` → clean .env + anomaly-heavy eval → **REJECT (ML)**
 - `03_hold_moderate_risk` → mild secrets + ~4% anomalies → **HOLD**
 - `04_accept_clean` → clean .env + clean eval → **ACCEPT**
-
