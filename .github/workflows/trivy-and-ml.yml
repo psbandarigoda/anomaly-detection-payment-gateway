@@ -18,8 +18,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       PYTHON_VERSION: '3.11'
-      # Set default scenario here (you can change per PR manually)
-      SCENARIO: "04_accept_clean"  # Change manually to: 01_reject_trivy_high_risk, 02_reject_ml_high_anomaly, etc.
 
     steps:
       - name: Checkout
@@ -36,24 +34,9 @@ jobs:
           if [ -f ml/requirements.txt ]; then pip install -r ml/requirements.txt; fi
 
       - name: Prepare dirs
-        run: mkdir -p datasets/payment_set_0001 ml/data trivy_out artifacts
+        run: mkdir -p datasets trivy_out artifacts
 
-      # APPLY SCENARIO FIRST (before dataset generation)
-      - name: Apply Test Scenario (.env + eval.csv)
-        run: |
-          echo "Applying scenario: $SCENARIO"
-          bash scripts/apply_scenario.sh $SCENARIO
-
-      # SHOW WHICH SCENARIO WAS APPLIED
-      - name: Show applied test scenario files (env + eval.csv)
-        run: |
-          echo "===== CURRENT .env (used by Trivy scan) ====="
-          cat datasets/payment_set_0001/.env || echo "No .env found"
-          echo ""
-          echo "===== First 5 lines of eval.csv (used by ML) ====="
-          head -n 5 ml/data/eval.csv || echo "No eval.csv found"
-
-      # ------------------- DATA GENERATION -------------------
+      # ------------------- DATA GENERATION (trivy/ is canonical) -------------------
       - name: Generate payment set
         run: |
           python trivy/make_payment_set_trivy.py --id 0001 --template trivy/payment_set_template
@@ -62,33 +45,35 @@ jobs:
       - name: Show generated tree (debug)
         run: ls -R datasets/payment_set_0001
 
-      # ------------------- TRIVY INSTALL + SCAN -------------------
+      # ------------------- TRIVY (install via official script) -------------------
       - name: Install Trivy (official script)
         run: |
           curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh
           ./bin/trivy --version
 
+      # JSON for scoring (used by score_trivy.py)
       - name: Trivy filesystem scan (JSON for scoring)
         run: |
           ./bin/trivy fs --scanners secret,misconfig \
             --format json -o trivy_out/scan.json datasets/payment_set_0001 || true
 
+      # (Optional) SARIF for GitHub Code Scanning UI
       - name: Trivy filesystem scan (SARIF artifact)
         run: |
           ./bin/trivy fs --scanners secret,misconfig \
             --format sarif -o artifacts/0001_trivy.sarif datasets/payment_set_0001 || true
 
-      # ------------------- SCORE TRIVY -------------------
+      # ------------------- SCORE TRIVY -> JSON -------------------
       - name: Score Trivy (Precision/Recall/F1 + risk -> JSON)
         run: |
           python trivy/score_trivy.py --scan trivy_out/scan.json --out trivy_out/trivy_metrics.json
           echo "----- Trivy metrics -----"
           cat trivy_out/trivy_metrics.json
 
-      # ------------------- ML EVALUATE -------------------
+      # ------------------- ML -------------------
       - name: Verify Isolation Forest model exists
         run: |
-          test -f ml/models/isolation_forest_model_v1.pkl || (echo "Model not found. Commit trained model."; exit 1)
+          test -f ml/models/isolation_forest_model_v1.pkl || (echo "Model not found: ml/models/isolation_forest_model_v1.pkl. Run ml/src/train.py and commit the .pkl."; exit 1)
 
       - name: ML Evaluate (Isolation Forest on eval.csv)
         run: |
@@ -101,7 +86,7 @@ jobs:
         run: |
           python ml/src/decision_gate.py
 
-      # ------------------- UPLOAD ARTIFACTS -------------------
+      # ------------------- ARTIFACTS + SUMMARY -------------------
       - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -112,16 +97,6 @@ jobs:
             trivy_out/**
             ml_out/**
 
-      - name: Upload applied scenario input files
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: applied-test-scenario-inputs
-          path: |
-            datasets/payment_set_0001/.env
-            ml/data/eval.csv
-
-      # ------------------- SUMMARY -------------------
       - name: Post Job Summary
         if: always()
         run: |
