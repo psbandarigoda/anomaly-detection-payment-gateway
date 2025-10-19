@@ -3,7 +3,15 @@
 Read a Trivy JSON scan and emit compact metrics JSON for the Decision Gate.
 
 Usage:
+  # minimal (no ground truth; GT-derived fields will be null)
   python trivy/score_trivy.py --scan trivy_out/scan.json --out trivy_out/trivy_metrics.json
+
+  # with ground truth (populates TP/FP/FN, precision/recall/f1, risk score, etc.)
+  python trivy/score_trivy.py --scan trivy_out/payment_set_0001.json \
+    --out trivy_out/payment_set_0001.metrics.json \
+    --payment-set-id payment_set_0001 \
+    --gt-high 7 --gt-medium 0 --gt-low 1 \
+    --weights "0.7,0.2,0.1"
 """
 import argparse
 import json
@@ -42,7 +50,6 @@ def compute_prf(tp: int, fp: int, fn: int):
 
 def per_severity_confusion(pred_high: int, pred_med: int, pred_low: int,
                            gt_high: int, gt_med: int, gt_low: int):
-    # severity-wise TP/FP/FN via count matching
     def row(p, g):
         tp = min(p, g)
         fp = max(p - g, 0)
@@ -66,7 +73,6 @@ def per_severity_confusion(pred_high: int, pred_med: int, pred_low: int,
 def infer_payment_set_id(explicit_id: str, out_path: Path, scan_path: Path) -> str:
     if explicit_id:
         return explicit_id
-    # Prefer deriving from --out, then --scan
     if out_path and out_path.stem:
         return out_path.stem.replace(".metrics", "")
     if scan_path and scan_path.stem:
@@ -94,14 +100,14 @@ def main():
     counts = Counter()
     collect_counts(scan, counts)
 
-    # Keep CRITICAL separate; risk derives from presence of any sev.
+    # Severity counts
     high_only = counts.get("HIGH", 0)
     critical  = counts.get("CRITICAL", 0)
-    high = high_only  # keep "high" as HIGH only; CRITICAL stays in its own field
-    medium = counts.get("MEDIUM", 0)
-    low = counts.get("LOW", 0)
-    unknown = counts.get("UNKNOWN", 0)
+    medium    = counts.get("MEDIUM", 0)
+    low       = counts.get("LOW", 0)
+    unknown   = counts.get("UNKNOWN", 0)
 
+    # Risk label
     if (high_only + critical) > 0:
         risk = "high"
     elif medium > 0:
@@ -111,6 +117,40 @@ def main():
     else:
         risk = "low"
 
+    # Always parse weights so they can be included even when GT is missing
+    w_high, w_med, w_low = parse_weights(args.weights)
+
+    # ---- Defaults for GT-derived fields so keys always exist in metrics ----
+    n_gt = None
+    TP = FP = FN = None
+    precision = recall = f1 = None
+    trivy_risk_score = None
+
+    # Compute GT-derived values if any GT is provided
+    have_gt = any(v is not None for v in (args.gt_high, args.gt_medium, args.gt_low))
+    if have_gt:
+        gt_high = int(args.gt_high or 0)
+        gt_med  = int(args.gt_medium or 0)
+        gt_low  = int(args.gt_low or 0)
+        n_gt = int(args.n_gt) if args.n_gt is not None else (gt_high + gt_med + gt_low)
+
+        TP, FP, FN, _per_sev = per_severity_confusion(
+            pred_high=high_only + critical,  # treat CRITICAL as HIGH for matching
+            pred_med=medium,
+            pred_low=low,
+            gt_high=gt_high,
+            gt_med=gt_med,
+            gt_low=gt_low
+        )
+
+        precision, recall, f1 = compute_prf(TP, FP, FN)
+
+        weighted_sum = (w_high * (high_only + critical)) + (w_med * medium) + (w_low * low)
+        trivy_risk_score = (weighted_sum / n_gt) if n_gt and n_gt > 0 else None
+        if trivy_risk_score is not None:
+            trivy_risk_score = max(0.0, min(1.0, float(trivy_risk_score)))
+
+    # ---- Build metrics dict AFTER variables are defined (or defaulted) ----
     metrics: Dict[str, Any] = {
         "payment_set_id": infer_payment_set_id(args.payment_set_id, out_path, scan_path),
         "risk": risk,
@@ -129,44 +169,6 @@ def main():
         "trivy_risk_score": round(trivy_risk_score, 6) if trivy_risk_score is not None else None,
         "weights": {"high": w_high, "medium": w_med, "low": w_low},
     }
-
-    # If any ground truth is provided, compute extras
-    have_gt = any(v is not None for v in (args.gt_high, args.gt_medium, args.gt_low))
-    if have_gt:
-        gt_high = int(args.gt_high or 0)
-        gt_med  = int(args.gt_medium or 0)
-        gt_low  = int(args.gt_low or 0)
-        n_gt = int(args.n_gt) if args.n_gt is not None else (gt_high + gt_med + gt_low)
-
-        TP, FP, FN, per_sev = per_severity_confusion(
-            pred_high=high_only + critical,  # treat CRITICAL as HIGH for matching
-            pred_med=medium,
-            pred_low=low,
-            gt_high=gt_high,
-            gt_med=gt_med,
-            gt_low=gt_low
-        )
-
-        precision, recall, f1 = compute_prf(TP, FP, FN)
-
-        w_high, w_med, w_low = parse_weights(args.weights)
-        weighted_sum = (w_high * (high_only + critical)) + (w_med * medium) + (w_low * low)
-        trivy_risk_score = (weighted_sum / n_gt) if n_gt and n_gt > 0 else None
-        if trivy_risk_score is not None:
-            trivy_risk_score = max(0.0, min(1.0, float(trivy_risk_score)))
-
-        metrics.update({
-            "n_gt": n_gt,
-            "TP": TP,
-            "FP": FP,
-            "FN": FN,
-            "precision": round(precision, 6) if precision is not None else None,
-            "recall": round(recall, 6) if recall is not None else None,
-            "f1": round(f1, 6) if f1 is not None else None,
-            "trivy_risk_score": round(trivy_risk_score, 6) if trivy_risk_score is not None else None,
-            "weights": {"high": w_high, "medium": w_med, "low": w_low},
-            "per_severity_confusion": per_sev
-        })
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(metrics, indent=2))
