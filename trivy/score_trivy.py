@@ -34,9 +34,9 @@ def parse_weights(s: str) -> Tuple[float, float, float]:
 def safe_div(n: float, d: float):
     return (float(n) / float(d)) if d not in (0, 0.0) else None
 
-def compute_prf(tp: int, fp: int, fn: int) -> Tuple[Any, Any, Any]:
+def compute_prf(tp: int, fp: int, fn: int):
     precision = safe_div(tp, tp + fp)
-    recall = safe_div(tp, tp + fn)
+    recall    = safe_div(tp, tp + fn)
     f1 = safe_div(2 * precision * recall, precision + recall) if (precision and recall and (precision + recall) > 0) else None
     return precision, recall, f1
 
@@ -94,10 +94,10 @@ def main():
     counts = Counter()
     collect_counts(scan, counts)
 
-    # Note: keep CRITICAL separate; risk derives from presence of any sev.
+    # Keep CRITICAL separate; risk derives from presence of any sev.
     high_only = counts.get("HIGH", 0)
     critical  = counts.get("CRITICAL", 0)
-    high = high_only  # keep high as only HIGH; critical is its own field
+    high = high_only  # keep "high" as HIGH only; CRITICAL stays in its own field
     medium = counts.get("MEDIUM", 0)
     low = counts.get("LOW", 0)
     unknown = counts.get("UNKNOWN", 0)
@@ -111,11 +111,10 @@ def main():
     else:
         risk = "low"
 
-    metrics = {
-        "payment_set_id": infer_payment_set_id(args.payment_set_id, out_path, scan_path),
+    metrics: Dict[str, Any] = {
         "risk": risk,
         "critical": critical,
-        "high": high_only,   # keep original behavior (HIGH only)
+        "high": high_only,
         "medium": medium,
         "low": low,
         "unknown": unknown,
@@ -142,18 +141,15 @@ def main():
         )
 
         precision, recall, f1 = compute_prf(TP, FP, FN)
-        # Risk score (weighted severities / n_gt). Clamp 0..1. None if n_gt==0.
-        try:
-            w_high, w_med, w_low = parse_weights(args.weights)
-        except Exception as e:
-            raise SystemExit(f"Invalid --weights: {e}")
 
+        w_high, w_med, w_low = parse_weights(args.weights)
         weighted_sum = (w_high * (high_only + critical)) + (w_med * medium) + (w_low * low)
-        trivy_risk_score = (weighted_sum / n_gt) if n_gt > 0 else None
+        trivy_risk_score = (weighted_sum / n_gt) if n_gt and n_gt > 0 else None
         if trivy_risk_score is not None:
             trivy_risk_score = max(0.0, min(1.0, float(trivy_risk_score)))
 
         metrics.update({
+            "payment_set_id": infer_payment_set_id(args.payment_set_id, out_path, scan_path),
             "n_gt": n_gt,
             "TP": TP,
             "FP": FP,
