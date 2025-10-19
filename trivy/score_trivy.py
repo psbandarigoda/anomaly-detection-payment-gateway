@@ -11,7 +11,7 @@ Usage:
     --out trivy_out/payment_set_0001.metrics.json \
     --payment-set-id payment_set_0001 \
     --gt-high 7 --gt-medium 0 --gt-low 1 \
-    --weights "0.7,0.2,0.1"
+    --weights "0.7,0.2,0.1" 
 """
 import argparse
 import json
