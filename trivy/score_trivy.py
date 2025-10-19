@@ -112,15 +112,22 @@ def main():
         risk = "low"
 
     metrics: Dict[str, Any] = {
+        "payment_set_id": infer_payment_set_id(args.payment_set_id, out_path, scan_path),
         "risk": risk,
         "critical": critical,
         "high": high_only,
         "medium": medium,
         "low": low,
         "unknown": unknown,
-        "precision": None,
-        "recall": None,
-        "f1": None,
+        "n_gt": n_gt,
+        "TP": TP,
+        "FP": FP,
+        "FN": FN,
+        "precision": round(precision, 6) if precision is not None else None,
+        "recall": round(recall, 6) if recall is not None else None,
+        "f1": round(f1, 6) if f1 is not None else None,
+        "trivy_risk_score": round(trivy_risk_score, 6) if trivy_risk_score is not None else None,
+        "weights": {"high": w_high, "medium": w_med, "low": w_low},
     }
 
     # If any ground truth is provided, compute extras
@@ -149,7 +156,6 @@ def main():
             trivy_risk_score = max(0.0, min(1.0, float(trivy_risk_score)))
 
         metrics.update({
-            "payment_set_id": infer_payment_set_id(args.payment_set_id, out_path, scan_path),
             "n_gt": n_gt,
             "TP": TP,
             "FP": FP,
